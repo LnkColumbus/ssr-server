@@ -15,7 +15,14 @@ app.use(cookieParser());
 // Basic strategy
 require("./utils/auth/strategies/basic");
 
+// Variables de tiempo en sec
+const THIRTY_DAYS_IN_SEC = 2592000;
+const TWO_HOURS_IN_SEC = 7200;
+
 app.post("/auth/sign-in", async function (req, res, next) {
+  // Obtener el attr desde el cuerpo del request
+  const { rememberMe } = req.body;
+
   passport.authenticate("basic", function (error, data) {
     try {
       if (error || !data) {
@@ -27,10 +34,27 @@ app.post("/auth/sign-in", async function (req, res, next) {
           next(error);
         }
 
-        res.cookie("token", token, {
-          httpOnly: !config.dev,
-          secure: !config.dev,
-        });
+        const { token, ...user } = data;
+
+        // Si el attr es verdadero expira en 30 dias
+        // De lo contrario expira en 2 horas
+
+        if (!config.dev) {
+          res.cookie("token", token, {
+            httpOnly: true,
+            secure: true,
+            maxAge: rememberMe ? THIRTY_DAYS_IN_SEC : TWO_HOURS_IN_SEC,
+          });
+        } else {
+          res.cookie("token", token, {
+            maxAge: rememberMe ? THIRTY_DAYS_IN_SEC : TWO_HOURS_IN_SEC,
+          });
+        }
+        // res.cookie("token", token, {
+        //   httpOnly: !config.dev,
+        //   secure: !config.dev,
+        //   maxAge: rememberMe ? THIRTY_DAYS_IN_SEC : TWO_HOURS_IN_SEC,
+        // });
 
         res.status(200).json(user);
       });
@@ -58,9 +82,48 @@ app.post("/auth/sign-up", async function (req, res, next) {
 
 app.get("/movies", async function (req, res, next) {});
 
-app.post("/user-movies", async function (req, res, next) {});
+app.post("/user-movies", async function (req, res, next) {
+  try {
+    const { body: userMovie } = req;
+    const { token } = req.cookies;
 
-app.delete("/user-movies/:userMovieId", async function (req, res, next) {});
+    const { data, status } = await axios({
+      url: `${config.apiUrl}/api/user-movies`,
+      headers: { Authorization: `Bearer ${token}` },
+      method: "post",
+      data: userMovie,
+    });
+
+    if (status !== 201) {
+      return next(boom.badImplementation());
+    }
+
+    res.status(201).json(data);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/user-movies/:userMovieId", async function (req, res, next) {
+  try {
+    const { userMovieId } = req.params;
+    const { token } = req.cookies;
+
+    const { data, status } = await axios({
+      url: `${config.apiUrl}/api/user-movies/${userMovieId}`,
+      headers: { Authorization: `Bearer ${token}` },
+      method: "delete",
+    });
+
+    if (status !== 200) {
+      return next(boom.badImplementation());
+    }
+
+    res.status(200).json(data);
+  } catch (error) {
+    next(error);
+  }
+});
 
 app.listen(config.port, function () {
   console.log(`Listening http://localhost:${config.port}`);
